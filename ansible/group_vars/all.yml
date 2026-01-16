@@ -1,0 +1,6 @@
+# GitLab Configuration
+gitlab_external_url: "http://192.168.68.50"
+
+# Postfix configuration
+postfix_mail_type: "Internet Site"
+postfix_mailname: "gitlab.local"

@@ -88,6 +88,21 @@ terraform apply
 
 ## Post-Deployment: Install GitLab
 
+### Option A: Ansible (Recommended)
+
+```bash
+cd ansible
+ansible-playbook playbook.yml
+```
+
+This will:
+- Install all dependencies
+- Add GitLab repository
+- Install and configure GitLab CE
+- Display the initial root password
+
+### Option B: Manual
+
 SSH into the new VM:
 
 ```bash
@@ -125,6 +140,15 @@ gitlab-vm/
 │   └── gitlab.yaml         # Cloud-init user data
 ├── scripts/
 │   └── pre-check.sh        # Pre-deployment validation script
+├── ansible/
+│   ├── ansible.cfg         # Ansible configuration
+│   ├── playbook.yml        # Main playbook
+│   ├── inventory/
+│   │   └── hosts.yml       # Host inventory
+│   ├── group_vars/
+│   │   └── all.yml         # Variables
+│   └── roles/
+│       └── gitlab/         # GitLab role
 ├── .gitignore
 └── README.md
 ```

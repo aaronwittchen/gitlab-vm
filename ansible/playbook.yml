@@ -1,0 +1,15 @@
+---
+- name: Install and configure GitLab CE
+  hosts: gitlab
+  become: yes
+
+  roles:
+    - gitlab
+
+  post_tasks:
+    - name: Show access information
+      debug:
+        msg:
+          - "GitLab is now available at: {{ gitlab_external_url }}"
+          - "Login as: root"
+          - "Password: Check output above or run 'sudo cat /etc/gitlab/initial_root_password' on the server"

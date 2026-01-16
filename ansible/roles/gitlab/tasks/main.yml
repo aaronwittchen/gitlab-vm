@@ -1,0 +1,75 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install dependencies
+  apt:
+    name:
+      - curl
+      - ca-certificates
+      - perl
+      - openssh-server
+      - tzdata
+    state: present
+
+- name: Install postfix (non-interactive)
+  apt:
+    name: postfix
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Configure postfix mail type
+  debconf:
+    name: postfix
+    question: postfix/main_mailer_type
+    value: "{{ postfix_mail_type }}"
+    vtype: select
+
+- name: Configure postfix mailname
+  debconf:
+    name: postfix
+    question: postfix/mailname
+    value: "{{ postfix_mailname }}"
+    vtype: string
+
+- name: Check if GitLab is already installed
+  stat:
+    path: /usr/bin/gitlab-ctl
+  register: gitlab_installed
+
+- name: Download GitLab repository script
+  get_url:
+    url: https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.deb.sh
+    dest: /tmp/gitlab-repo.sh
+    mode: '0755'
+  when: not gitlab_installed.stat.exists
+
+- name: Run GitLab repository script
+  command: /tmp/gitlab-repo.sh
+  when: not gitlab_installed.stat.exists
+
+- name: Install GitLab CE
+  apt:
+    name: gitlab-ce
+    state: present
+  environment:
+    EXTERNAL_URL: "{{ gitlab_external_url }}"
+  when: not gitlab_installed.stat.exists
+
+- name: Reconfigure GitLab
+  command: gitlab-ctl reconfigure
+  when: not gitlab_installed.stat.exists
+
+- name: Get initial root password
+  slurp:
+    src: /etc/gitlab/initial_root_password
+  register: gitlab_password
+  ignore_errors: yes
+
+- name: Display initial root password
+  debug:
+    msg: "GitLab initial root password: {{ gitlab_password.content | b64decode | regex_search('Password: (.+)', '\\1') | first }}"
+  when: gitlab_password is succeeded
