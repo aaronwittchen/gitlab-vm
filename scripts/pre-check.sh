@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
 # Load variables from terraform.tfvars
 TFVARS_FILE="${1:-terraform.tfvars}"
 
@@ -23,23 +32,23 @@ PROXMOX_NODE=$(parse_tfvar 'proxmox_node' "$TFVARS_FILE")
 VM_ID=$(grep '^vm_id' "$TFVARS_FILE" | grep -oE '[0-9]+')
 VM_IP=$(parse_tfvar 'vm_ip' "$TFVARS_FILE" | cut -d'/' -f1)
 
-echo "=== Pre-deployment checks ==="
+echo -e "${BOLD}${CYAN}=== Pre-deployment checks ===${NC}"
 echo ""
 
 # Check 1: Is the IP already in use?
-echo "[1/2] Checking if IP $VM_IP is in use..."
+echo -e "${BLUE}[1/2]${NC} Checking if IP ${BOLD}$VM_IP${NC} is in use..."
 if ping -c 1 -W 1 "$VM_IP" &>/dev/null; then
-    echo "  FAIL: IP $VM_IP is already responding to ping"
+    echo -e "  ${RED}✗ FAIL:${NC} IP $VM_IP is already responding to ping"
     IP_CHECK=1
 else
-    echo "  OK: IP $VM_IP is not in use"
+    echo -e "  ${GREEN}✓ OK:${NC} IP $VM_IP is not in use"
     IP_CHECK=0
 fi
 
 echo ""
 
 # Check 2: Is the VM ID already taken in Proxmox?
-echo "[2/2] Checking if VM ID $VM_ID exists in Proxmox..."
+echo -e "${BLUE}[2/2]${NC} Checking if VM ID ${BOLD}$VM_ID${NC} exists in Proxmox..."
 
 # Get auth ticket
 TICKET_DATA=$(curl -sk -X POST \
@@ -50,7 +59,7 @@ TICKET_DATA=$(curl -sk -X POST \
 TICKET=$(echo "$TICKET_DATA" | grep -oP '"ticket":"\K[^"]+' || true)
 
 if [[ -z "$TICKET" ]]; then
-    echo "  WARN: Could not authenticate to Proxmox API"
+    echo -e "  ${YELLOW}? WARN:${NC} Could not authenticate to Proxmox API"
     echo "  (Check proxmox_url, proxmox_user, proxmox_password in tfvars)"
     VMID_CHECK=0
 else
@@ -60,21 +69,21 @@ else
         "$PROXMOX_URL/api2/json/nodes/$PROXMOX_NODE/qemu/$VM_ID/status/current" 2>/dev/null)
 
     if echo "$API_RESPONSE" | grep -q '"status"'; then
-        echo "  FAIL: VM ID $VM_ID already exists in Proxmox"
+        echo -e "  ${RED}✗ FAIL:${NC} VM ID $VM_ID already exists in Proxmox"
         VMID_CHECK=1
     else
-        echo "  OK: VM ID $VM_ID is available"
+        echo -e "  ${GREEN}✓ OK:${NC} VM ID $VM_ID is available"
         VMID_CHECK=0
     fi
 fi
 
 echo ""
-echo "=== Summary ==="
+echo -e "${BOLD}${CYAN}=== Summary ===${NC}"
 
 if [[ $IP_CHECK -eq 1 ]] || [[ $VMID_CHECK -eq 1 ]]; then
-    echo "Some checks failed. Review before running terraform apply."
+    echo -e "${RED}Some checks failed.${NC} Review before running terraform apply."
     exit 1
 else
-    echo "All checks passed. Safe to run terraform apply."
+    echo -e "${GREEN}All checks passed.${NC} Safe to run terraform apply."
     exit 0
 fi
