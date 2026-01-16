@@ -1,0 +1,31 @@
+---
+- name: Download cloudflared
+  get_url:
+    url: https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    dest: /tmp/cloudflared.deb
+    mode: '0644'
+
+- name: Install cloudflared
+  apt:
+    deb: /tmp/cloudflared.deb
+    state: present
+
+- name: Stop cloudflared if running
+  systemd:
+    name: cloudflared
+    state: stopped
+  ignore_errors: yes
+
+- name: Remove old cloudflared service
+  command: cloudflared service uninstall
+  ignore_errors: yes
+
+- name: Install cloudflared service with token
+  command: "cloudflared service install {{ cloudflare_tunnel_token }}"
+
+- name: Enable and start cloudflared
+  systemd:
+    name: cloudflared
+    enabled: yes
+    state: started
+    daemon_reload: yes

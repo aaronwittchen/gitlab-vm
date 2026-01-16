@@ -9,6 +9,9 @@
 terraform.tfvars
 *.auto.tfvars
 
+# Ansible secrets
+ansible/group_vars/all/secrets.yml
+
 # Crash logs
 crash.log
 crash.*.log

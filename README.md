@@ -1,20 +1,22 @@
 # GitLab VM - Terraform Proxmox
 
-Terraform configuration to provision a Debian 12 VM on Proxmox for hosting GitLab CE.
+Terraform configuration to provision a Debian 12 VM on Proxmox for hosting GitLab CE, with optional Cloudflare Tunnel for HTTPS access.
 
 ## Prerequisites
 
 - Proxmox VE 7.x or 8.x
 - Terraform >= 1.0
+- Ansible >= 2.10
 - SSH key pair generated locally
 - Network access to Proxmox API
+- (Optional) Cloudflare account with a domain for HTTPS access
 
 ## VM Specifications
 
 | Resource | Value |
 |----------|-------|
 | CPU | 4 cores |
-| RAM | 8 GB |
+| RAM | 16 GB |
 | Disk | 80 GB |
 | OS | Debian 12 (Bookworm) |
 
@@ -52,21 +54,15 @@ cp terraform.tfvars.example terraform.tfvars
 
 Edit `terraform.tfvars` with your values:
 
-- `proxmox_url` - Proxmox API URL (e.g., `https://192.168.68.2:8006`)
-- `proxmox_password` - Proxmox root password
-- `proxmox_node` - Proxmox node name
-- `vm_ip` - Static IP for the VM in CIDR notation
-- `gateway` - Network gateway
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `proxmox_url` | Proxmox API URL | `https://192.168.1.100:8006` |
+| `proxmox_password` | Proxmox root password | |
+| `proxmox_node` | Proxmox node name | `pve` |
+| `vm_ip` | Static IP for the VM (CIDR) | `192.168.1.50/24` |
+| `gateway` | Network gateway | `192.168.1.1` |
 
-### 3. Configure Cloud-Init
-
-Edit `cloud-init/gitlab.yaml` and replace the SSH public key with your own:
-
-```bash
-cat ~/.ssh/id_ed25519.pub
-```
-
-### 4. Pre-Deployment Checks (Optional)
+### 3. Pre-Deployment Checks (Optional)
 
 Run the validation script to verify the IP and VM ID are available:
 
@@ -78,7 +74,7 @@ This checks:
 - IP address is not already in use (ping test)
 - VM ID does not already exist in Proxmox (API query)
 
-### 5. Deploy
+### 4. Deploy VM
 
 ```bash
 terraform init
@@ -86,9 +82,24 @@ terraform plan
 terraform apply
 ```
 
-## Post-Deployment: Install GitLab
+### 5. Install GitLab with Ansible
 
-### Option A: Ansible (Recommended)
+Configure Ansible secrets:
+
+```bash
+cp ansible/group_vars/all/secrets.yml.example ansible/group_vars/all/secrets.yml
+```
+
+Edit `ansible/group_vars/all/secrets.yml` with your values (see Cloudflare Tunnel section below if using HTTPS).
+
+Update the inventory with your VM IP:
+
+```bash
+# Edit ansible/inventory/hosts.yml
+ansible_host: <your-vm-ip>
+```
+
+Run the playbook:
 
 ```bash
 cd ansible
@@ -99,59 +110,68 @@ This will:
 - Install all dependencies
 - Add GitLab repository
 - Install and configure GitLab CE
+- Configure Cloudflare Tunnel (if enabled)
 - Display the initial root password
 
-### Option B: Manual
-
-SSH into the new VM:
+**Important:** After installation completes, restart the VM to ensure all services start cleanly:
 
 ```bash
-ssh admin@192.168.68.50
+ssh admin@<your-vm-ip> 'sudo reboot'
 ```
 
-Install GitLab CE:
+Wait a few minutes for GitLab to fully start after reboot.
+
+## Cloudflare Tunnel (HTTPS)
+
+Cloudflare Tunnel provides secure HTTPS access to your GitLab instance without opening firewall ports.
+
+### 1. Create Tunnel in Cloudflare
+
+1. Go to **Cloudflare Zero Trust** → **Networks** → **Tunnels**
+2. Click **Create a tunnel**
+3. Select **Cloudflared** as the connector
+4. Name your tunnel (e.g., `gitlab`)
+5. Copy the tunnel token (starts with `eyJ...`)
+
+### 2. Configure Public Hostname
+
+In the tunnel configuration, add a **Public Hostname**:
+
+| Field | Value |
+|-------|-------|
+| Subdomain | `gitlab` (or your choice) |
+| Domain | Your Cloudflare domain |
+| Type | `HTTP` |
+| URL | `localhost:80` |
+
+### 3. Configure Ansible
+
+Edit `ansible/group_vars/all/secrets.yml`:
+
+```yaml
+gitlab_domain: "gitlab.yourdomain.com"
+cloudflare_tunnel_token: "eyJ..."
+```
+
+Edit `ansible/group_vars/all/main.yml`:
+
+```yaml
+cloudflare_tunnel_enabled: true
+gitlab_external_url: "https://gitlab.yourdomain.com"
+```
+
+### 4. Run Ansible
 
 ```bash
-# Install dependencies
-sudo apt update
-sudo apt install -y curl ca-certificates perl postfix
-
-# Add GitLab repository
-curl -fsSL https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.deb.sh | sudo bash
-
-# Install GitLab (replace URL with your domain/IP)
-sudo EXTERNAL_URL="http://gitlab.local" apt install -y gitlab-ce
-
-# Get initial root password
-sudo cat /etc/gitlab/initial_root_password
+cd ansible
+ansible-playbook playbook.yml
 ```
 
-Access GitLab at `http://192.168.68.50` and login as `root`.
+Your GitLab will be accessible at `https://gitlab.yourdomain.com`.
 
-## File Structure
+## CI/CD
 
-```
-gitlab-vm/
-├── main.tf                 # Main Terraform configuration
-├── variables.tf            # Variable definitions
-├── terraform.tfvars        # Variable values (git-ignored)
-├── terraform.tfvars.example# Template for terraform.tfvars
-├── cloud-init/
-│   └── gitlab.yaml         # Cloud-init user data
-├── scripts/
-│   └── pre-check.sh        # Pre-deployment validation script
-├── ansible/
-│   ├── ansible.cfg         # Ansible configuration
-│   ├── playbook.yml        # Main playbook
-│   ├── inventory/
-│   │   └── hosts.yml       # Host inventory
-│   ├── group_vars/
-│   │   └── all.yml         # Variables
-│   └── roles/
-│       └── gitlab/         # GitLab role
-├── .gitignore
-└── README.md
-```
+This repository includes a GitHub Actions workflow for **Checkov** security scanning. It runs on every push and pull request to scan Terraform files for security misconfigurations.
 
 ## Destruction
 
@@ -172,8 +192,25 @@ terraform destroy
 - Verify VM IP with Proxmox console
 - Check that your SSH key matches the one in `cloud-init/gitlab.yaml`
 - Ensure firewall allows SSH (port 22)
+- If host key changed: `ssh-keygen -R <vm-ip>`
 
 ### Terraform authentication errors
 - Verify `proxmox_url` includes the port (`:8006`)
 - Check username format is `root@pam`
 - If using self-signed cert, ensure `insecure = true` in provider config
+- Escape special characters in password (e.g., `\\` for backslash)
+
+### Ansible module not found
+- On Arch Linux, use a Python venv: `python -m venv ~/.local/ansible-venv && ~/.local/ansible-venv/bin/pip install ansible`
+- Or use pyenv if system Python is too new
+
+### Cloudflare Tunnel not connecting
+- Verify tunnel token is correct
+- Check tunnel status in Cloudflare Zero Trust dashboard
+- Ensure public hostname is configured in Cloudflare
+- Check logs: `ssh admin@<vm-ip> 'sudo journalctl -u cloudflared -n 50'`
+
+### GitLab using too much memory
+- Increase VM RAM in `main.tf` (recommended: 16GB)
+- Run `terraform apply` and reboot VM
+- Or manually adjust in Proxmox UI

@@ -63,6 +63,30 @@
   command: gitlab-ctl reconfigure
   when: not gitlab_installed.stat.exists
 
+- name: Enable self-signed SSL in GitLab config
+  lineinfile:
+    path: /etc/gitlab/gitlab.rb
+    regexp: "^external_url "
+    line: "external_url '{{ gitlab_external_url }}'"
+  notify: Reconfigure GitLab
+  when: gitlab_ssl_enabled | default(false)
+
+- name: Enable nginx SSL redirect
+  lineinfile:
+    path: /etc/gitlab/gitlab.rb
+    regexp: "^nginx\\['redirect_http_to_https'\\]"
+    line: "nginx['redirect_http_to_https'] = true"
+  notify: Reconfigure GitLab
+  when: gitlab_ssl_enabled | default(false)
+
+- name: Enable self-signed certificate generation
+  lineinfile:
+    path: /etc/gitlab/gitlab.rb
+    regexp: "^letsencrypt\\['enable'\\]"
+    line: "letsencrypt['enable'] = false"
+  notify: Reconfigure GitLab
+  when: gitlab_ssl_enabled | default(false)
+
 - name: Get initial root password
   slurp:
     src: /etc/gitlab/initial_root_password
@@ -73,3 +97,7 @@
   debug:
     msg: "GitLab initial root password: {{ gitlab_password.content | b64decode | regex_search('Password: (.+)', '\\1') | first }}"
   when: gitlab_password is succeeded
+
+- name: Setup Cloudflare Tunnel
+  include_tasks: cloudflare-tunnel.yml
+  when: cloudflare_tunnel_enabled | default(false)

@@ -1,0 +1,10 @@
+# GitLab Configuration
+gitlab_external_url: "https://gitlab.pinksalad.eu"
+gitlab_ssl_enabled: false
+
+# Postfix configuration
+postfix_mail_type: "Internet Site"
+postfix_mailname: "gitlab.local"
+
+# Cloudflare Tunnel (set to true to enable, secrets in secrets.yml)
+cloudflare_tunnel_enabled: true

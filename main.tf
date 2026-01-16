@@ -42,7 +42,7 @@ resource "proxmox_virtual_environment_vm" "gitlab" {
   }
 
   memory {
-    dedicated = 8192
+    dedicated = 16384
   }
 
   agent {
