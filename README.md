@@ -66,7 +66,19 @@ Edit `cloud-init/gitlab.yaml` and replace the SSH public key with your own:
 cat ~/.ssh/id_ed25519.pub
 ```
 
-### 4. Deploy
+### 4. Pre-Deployment Checks (Optional)
+
+Run the validation script to verify the IP and VM ID are available:
+
+```bash
+./scripts/pre-check.sh
+```
+
+This checks:
+- IP address is not already in use (ping test)
+- VM ID does not already exist in Proxmox (API query)
+
+### 5. Deploy
 
 ```bash
 terraform init
@@ -111,6 +123,8 @@ gitlab-vm/
 ├── terraform.tfvars.example# Template for terraform.tfvars
 ├── cloud-init/
 │   └── gitlab.yaml         # Cloud-init user data
+├── scripts/
+│   └── pre-check.sh        # Pre-deployment validation script
 ├── .gitignore
 └── README.md
 ```
