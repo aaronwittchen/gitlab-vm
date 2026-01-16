@@ -20,7 +20,9 @@ resource "proxmox_virtual_environment_file" "cloud_init" {
   node_name    = var.proxmox_node
 
   source_raw {
-    data      = file("${path.module}/cloud-init/gitlab.yaml")
+    data = templatefile("${path.module}/cloud-init/gitlab.yaml", {
+      ssh_public_key = trimspace(file(pathexpand(var.ssh_public_key_file)))
+    })
     file_name = "gitlab-cloud-init.yaml"
   }
 }

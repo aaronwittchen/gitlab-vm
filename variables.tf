@@ -52,3 +52,9 @@ variable "snippets_storage" {
   type        = string
   default     = "local"
 }
+
+variable "ssh_public_key_file" {
+  description = "Path to SSH public key file"
+  type        = string
+  default     = "~/.ssh/id_ed25519.pub"
+}
