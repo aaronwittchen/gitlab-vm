@@ -1,0 +1,12 @@
+proxmox_url      = "https://192.168.68.2:8006"
+proxmox_user     = "root@pam"
+proxmox_password = ""
+proxmox_node     = "pve"
+
+template_id      = 9000
+vm_id            = 200
+vm_ip            = "192.168.68.50/24"
+gateway          = "192.168.68.1"
+
+storage          = "local-lvm"
+snippets_storage = "local"

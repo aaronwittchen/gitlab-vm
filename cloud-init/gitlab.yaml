@@ -1,0 +1,25 @@
+#cloud-config
+hostname: gitlab
+fqdn: gitlab.local
+manage_etc_hosts: true
+
+users:
+  - name: admin
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHagl83dePu8MKWlMnVa179vq8oTUYQNcQQlsbq4++GB ahorn103@gmx.de
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - ca-certificates
+  - perl
+  - openssh-server
+  - qemu-guest-agent
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent
