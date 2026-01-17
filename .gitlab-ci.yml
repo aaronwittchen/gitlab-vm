@@ -1,0 +1,9 @@
+stages:
+  - test
+
+test:
+  stage: test
+  script:
+    - echo "Hello from Kubernetes runner!"
+    - echo "Running on $(hostname)"
+    - echo "Kernel: $(uname -r)"

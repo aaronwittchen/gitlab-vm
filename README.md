@@ -1,6 +1,21 @@
-# GitLab VM - Terraform Proxmox
+# GitLab VM + Talos Runner - Terraform Proxmox
 
-Terraform configuration to provision a Debian 12 VM on Proxmox for hosting GitLab CE, with optional Cloudflare Tunnel for HTTPS access.
+Terraform configuration to provision:
+- **GitLab CE** on a Debian 12 VM with optional Cloudflare Tunnel for HTTPS
+- **GitLab Runner** on a single-node Talos Linux Kubernetes cluster
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Proxmox VE                         │
+│  ┌─────────────────────┐  ┌─────────────────────────┐   │
+│  │   VM 1000 (Debian)  │  │   VM 1001 (Talos K8s)   │   │
+│  │      GitLab CE      │  │    GitLab Runner        │   │
+│  │   192.168.68.50     │  │    192.168.68.51        │   │
+│  └─────────────────────┘  └─────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## Prerequisites
 
@@ -13,12 +28,25 @@ Terraform configuration to provision a Debian 12 VM on Proxmox for hosting GitLa
 
 ## VM Specifications
 
-| Resource | Value |
-|----------|-------|
-| CPU | 4 cores |
-| RAM | 16 GB |
-| Disk | 80 GB |
-| OS | Debian 12 (Bookworm) |
+| VM | OS | CPU | RAM | Disk | Purpose |
+|----|-----|-----|-----|------|---------|
+| 1000 | Debian 12 | 4 cores | 16 GB | 80 GB | GitLab CE |
+| 1001 | Talos Linux | 4 cores | 16 GB | 80 GB | K8s Runner |
+
+## Quick Start
+
+```bash
+# Check for latest versions
+./scripts/check-versions.sh
+
+# Deploy everything
+terraform init
+terraform plan
+terraform apply
+
+# Get kubeconfig for runner cluster
+terraform output -raw kubeconfig > ~/.kube/runner-config
+```
 
 ## Setup
 
@@ -59,7 +87,9 @@ Edit `terraform.tfvars` with your values:
 | `proxmox_url` | Proxmox API URL | `https://192.168.1.100:8006` |
 | `proxmox_password` | Proxmox root password | |
 | `proxmox_node` | Proxmox node name | `pve` |
-| `vm_ip` | Static IP for the VM (CIDR) | `192.168.1.50/24` |
+| `vm_ip` | Static IP for GitLab VM (CIDR) | `192.168.1.50/24` |
+| `runner_ip` | Static IP for Talos runner | `192.168.1.51` |
+| `runner_ip_cidr` | Static IP for Talos runner (CIDR) | `192.168.1.51/24` |
 | `gateway` | Network gateway | `192.168.1.1` |
 
 ### 3. Pre-Deployment Checks (Optional)
@@ -74,13 +104,15 @@ This checks:
 - IP address is not already in use (ping test)
 - VM ID does not already exist in Proxmox (API query)
 
-### 4. Deploy VM
+### 4. Deploy Infrastructure
 
 ```bash
 terraform init
 terraform plan
 terraform apply
 ```
+
+This creates both the GitLab VM and the Talos runner cluster.
 
 ### 5. Install GitLab with Ansible
 
@@ -120,6 +152,81 @@ ssh admin@<your-vm-ip> 'sudo reboot'
 ```
 
 Wait a few minutes for GitLab to fully start after reboot.
+
+## Talos Runner Cluster
+
+The Talos runner is a single-node Kubernetes cluster for running GitLab CI/CD jobs.
+
+### Accessing the Cluster
+
+```bash
+# Save kubeconfig
+terraform output -raw kubeconfig > ~/.kube/runner-config
+
+# Save talosconfig (for talosctl)
+terraform output -raw talosconfig > ~/.talos/config
+
+# Test connectivity
+kubectl --kubeconfig ~/.kube/runner-config get nodes
+talosctl --talosconfig ~/.talos/config health
+```
+
+### Install Cilium CNI
+
+The cluster is configured without a default CNI. Install Cilium:
+
+```bash
+export KUBECONFIG=~/.kube/runner-config
+
+helm repo add cilium https://helm.cilium.io/
+helm install cilium cilium/cilium --namespace kube-system \
+  --set kubeProxyReplacement=true \
+  --set k8sServiceHost=192.168.68.51 \
+  --set k8sServicePort=6443
+```
+
+### Install GitLab Runner
+
+```bash
+export KUBECONFIG=~/.kube/runner-config
+
+helm repo add gitlab https://charts.gitlab.io
+helm install gitlab-runner gitlab/gitlab-runner \
+  --namespace gitlab-runner --create-namespace \
+  --set gitlabUrl=https://gitlab.yourdomain.com \
+  --set runnerToken=<your-runner-token>
+```
+
+Get the runner token from GitLab: **Settings** → **CI/CD** → **Runners** → **New project runner**.
+
+### Talos Management
+
+```bash
+# View cluster health
+talosctl health
+
+# View logs
+talosctl logs kubelet
+
+# Get cluster info
+talosctl get members
+
+# Upgrade Talos (after updating version in talos-runner.tf)
+talosctl upgrade --image ghcr.io/siderolabs/installer:v1.9.2
+```
+
+## Version Management
+
+Check for updates to Talos and Terraform providers:
+
+```bash
+./scripts/check-versions.sh
+```
+
+To update versions:
+1. Edit `talos-runner.tf` for Talos version
+2. Edit `main.tf` for provider versions
+3. Run `terraform init -upgrade`
 
 ## Cloudflare Tunnel (HTTPS)
 
@@ -175,10 +282,19 @@ This repository includes a GitHub Actions workflow for **Checkov** security scan
 
 ## Destruction
 
-To destroy the VM:
+To destroy everything:
 
 ```bash
 terraform destroy
+```
+
+To destroy only the runner cluster (keep GitLab):
+
+```bash
+terraform destroy -target=talos_machine_bootstrap.runner \
+  -target=talos_machine_configuration_apply.runner \
+  -target=proxmox_virtual_environment_vm.talos_runner \
+  -target=proxmox_virtual_environment_download_file.talos_image
 ```
 
 ## Troubleshooting
@@ -214,3 +330,15 @@ terraform destroy
 - Increase VM RAM in `main.tf` (recommended: 16GB)
 - Run `terraform apply` and reboot VM
 - Or manually adjust in Proxmox UI
+
+### Talos node not bootstrapping
+- Check Proxmox console for Talos boot messages
+- Verify network connectivity: `talosctl --nodes 192.168.68.51 dmesg`
+- Ensure the image downloaded correctly in Proxmox storage
+- Check talosconfig endpoints match the VM IP
+
+### Talos cluster unhealthy
+- Run `talosctl health` to see specific issues
+- Check etcd: `talosctl etcd members`
+- View kubelet logs: `talosctl logs kubelet`
+- Verify Cilium is installed and running

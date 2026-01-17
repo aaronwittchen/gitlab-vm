@@ -1,0 +1,24 @@
+machine:
+  install:
+    disk: /dev/vda
+  network:
+    interfaces:
+      - interface: ens18
+        addresses:
+          - ${ip_cidr}
+        routes:
+          - network: 0.0.0.0/0
+            gateway: ${gateway}
+    nameservers:
+%{ for ns in nameservers ~}
+      - ${ns}
+%{ endfor ~}
+  nodeLabels:
+    node-role.kubernetes.io/worker: ""
+cluster:
+  allowSchedulingOnControlPlanes: true
+  proxy:
+    disabled: true
+  network:
+    cni:
+      name: none
